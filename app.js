@@ -15,7 +15,7 @@ let comps = [];   // {id, type:'battery'|'bulb'|'switch', x, y, on}
 let wires = [];   // {a:[compId,term], b:[compId,term]}
 let seq = 0;
 const state = { mode: "wire", drag: null, wiring: null, hover: null };
-const done = { light: false, switch: false, two: false, parallel: false, series: false };
+const done = { light: false, switch: false, two: false, parallel: false, series: false, measure: false };
 
 /* ---------- kanvas ---------- */
 const board = document.getElementById("board");
@@ -29,11 +29,12 @@ function resize() {
   canvas.width = Math.round(W * DPR);
   canvas.height = Math.round(H * DPR);
   canvas.style.height = H + "px";
+  comps.forEach((c) => { c.x = max(50, min(W - 50, c.x)); c.y = max(40, min(H - 40, c.y)); }); // viewport içinde tut
 }
 window.addEventListener("resize", resize);
 
 /* ---------- bileşen geometrisi ---------- */
-const SIZE = { battery: [86, 44], bulb: [52, 52], switch: [74, 40] };
+const SIZE = { battery: [86, 44], bulb: [52, 52], switch: [74, 40], ammeter: [50, 50] };
 function termPos(c, i) {
   const [w] = SIZE[c.type];
   const dx = w / 2 + 10;
@@ -90,15 +91,16 @@ function solve() {
   // elemanları topla
   const bulbs = comps.filter((c) => c.type === "bulb").map((c) => ({ c, a: nodeOf(c.id, 0), b: nodeOf(c.id, 1) }));
   const batts = comps.filter((c) => c.type === "battery").map((c) => ({ c, nm: nodeOf(c.id, 0), np: nodeOf(c.id, 1) }));
+  const ammeters = comps.filter((c) => c.type === "ammeter").map((c) => ({ c, na: nodeOf(c.id, 0), nb: nodeOf(c.id, 1) }));
 
-  const result = { bulbI: new Map(), battI: new Map(), short: false };
+  const result = { bulbI: new Map(), battI: new Map(), ammI: new Map(), short: false };
   if (batts.length === 0 || N === 0) return result;
 
   // MNA: her pil için gizli düğüm h (ideal kaynak nm->h, iç direnç h->np)
   let extra = N;
   for (const b of batts) b.h = extra++;
-  const nodes = extra;           // toplam düğüm (0 = referans/toprak)
-  const M = batts.length;        // gerilim kaynağı sayısı
+  const nodes = extra;                       // toplam düğüm (0 = referans/toprak)
+  const M = batts.length + ammeters.length;  // gerilim kaynağı sayısı (pil + 0V ampermetre)
   const sz = (nodes - 1) + M;
   const A = Array.from({ length: sz }, () => new Array(sz + 1).fill(0));
   const gi = (n) => n - 1;       // düğüm -> matris indeksi (toprak hariç)
@@ -119,6 +121,13 @@ function solve() {
     if (b.nm > 0) { A[row][gi(b.nm)] -= 1; A[gi(b.nm)][row] -= 1; }
     A[row][sz] = V_BATT;
   });
+  // ampermetreler: 0V gerilim kaynağı (ideal tel + akım ölçer)
+  ammeters.forEach((am, k) => {
+    const row = (nodes - 1) + batts.length + k;
+    if (am.na > 0) { A[row][gi(am.na)] += 1; A[gi(am.na)][row] += 1; }
+    if (am.nb > 0) { A[row][gi(am.nb)] -= 1; A[gi(am.nb)][row] -= 1; }
+    A[row][sz] = 0;
+  });
   const x = gauss(A, sz);
   if (!x) return result;
   const volt = (n) => (n === 0 ? 0 : x[gi(n)]);
@@ -128,6 +137,7 @@ function solve() {
     result.battI.set(b.c.id, j);
     if (j > 2.4 * I_REF) result.short = true;   // ampulsüz düşük dirençli yol
   });
+  ammeters.forEach((am, k) => result.ammI.set(am.c.id, abs(x[(nodes - 1) + batts.length + k])));
   return result;
 }
 function gauss(A, n) {
@@ -155,16 +165,14 @@ function draw(res) {
   ctx.lineJoin = ctx.lineCap = "round";
   flow += 0.03;
 
-  // teller
+  // teller (dik açılı / Manhattan)
   for (let k = 0; k < wires.length; k++) {
     const wobj = wires[k];
-    const a = termPos(byId(wobj.a[0]), wobj.a[1]);
-    const b = termPos(byId(wobj.b[0]), wobj.b[1]);
+    const pts = wirePath(termPos(byId(wobj.a[0]), wobj.a[1]), termPos(byId(wobj.b[0]), wobj.b[1]));
     ctx.strokeStyle = state.delWire === k ? "#b5432c" : "#3a4657";
     ctx.lineWidth = state.delWire === k ? 5 : 4;
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-    // akım noktaları (bağlı elemanlarda akım varsa)
-    drawFlowDots(a, b, res);
+    ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.stroke();
+    drawFlowDots(pts, res);
   }
   // kablo çekiliyor
   if (state.wiring) {
@@ -183,59 +191,109 @@ function draw(res) {
     ctx.strokeStyle = hot ? "#b5432c" : "#51607a"; ctx.lineWidth = 2; ctx.stroke();
   }
 }
-function drawFlowDots(a, b, res) {
+function wirePath(a, b) {
+  const mx = (a[0] + b[0]) / 2;
+  return [a, [mx, a[1]], [mx, b[1]], b];
+}
+function drawFlowDots(pts, res) {
   if (!res) return;
-  // toplam akım varsa hareketli noktalar
   let anyI = 0; res.bulbI.forEach((v) => anyI = max(anyI, v)); res.battI.forEach((v) => anyI = max(anyI, v));
   if (anyI < 0.05) return;
-  const n = 3;
+  const segs = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) { const d = hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(d); total += d; }
+  if (total < 1) return;
+  const n = max(2, Math.round(total / 60));
+  ctx.fillStyle = "#b5432c";
   for (let i = 0; i < n; i++) {
-    const t = ((flow + i / n) % 1);
+    let dist = ((flow + i / n) % 1) * total, s = 0;
+    while (s < segs.length - 1 && dist > segs[s]) { dist -= segs[s]; s++; }
+    const t = segs[s] ? dist / segs[s] : 0;
     ctx.beginPath();
-    ctx.arc(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, 2.4, 0, TAU);
-    ctx.fillStyle = "#b5432c"; ctx.fill();
+    ctx.arc(pts[s][0] + (pts[s + 1][0] - pts[s][0]) * t, pts[s][1] + (pts[s + 1][1] - pts[s][1]) * t, 2.4, 0, TAU);
+    ctx.fill();
   }
 }
 function drawComp(c, res) {
   const [w, h] = SIZE[c.type];
   ctx.save(); ctx.translate(c.x, c.y);
+  // kısa devrede pil titrer
+  const shortB = res && res.short && c.type === "battery";
+  if (shortB) ctx.translate((Math.random() - 0.5) * 2.4, (Math.random() - 0.5) * 2.4);
   // terminal bağlantı çubukları
   ctx.strokeStyle = "#3a4657"; ctx.lineWidth = 4;
   ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(-w / 2 - 10, 0); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2 + 10, 0); ctx.stroke();
 
   if (c.type === "battery") {
-    ctx.fillStyle = "#faf8f1"; ctx.strokeStyle = "#22334f"; ctx.lineWidth = 2;
+    ctx.fillStyle = shortB ? "#f6d7cf" : "#faf8f1"; ctx.strokeStyle = shortB ? "#b5432c" : "#22334f"; ctx.lineWidth = 2;
     rr(-w / 2, -h / 2, w, h, 6); ctx.fill(); ctx.stroke();
-    // pil plakaları
     ctx.strokeStyle = "#22334f"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(-10, -h / 2 + 7); ctx.lineTo(-10, h / 2 - 7); ctx.stroke(); // uzun (+)
+    ctx.beginPath(); ctx.moveTo(-10, -h / 2 + 7); ctx.lineTo(-10, h / 2 - 7); ctx.stroke();
     ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(10, -h / 2 + 13); ctx.lineTo(10, h / 2 - 13); ctx.stroke(); // kısa (-)
+    ctx.beginPath(); ctx.moveTo(10, -h / 2 + 13); ctx.lineTo(10, h / 2 - 13); ctx.stroke();
     ctx.fillStyle = "#22334f"; ctx.font = '700 15px Inter'; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("+", -24, 0); ctx.fillText("–", 26, 0);
+    if (shortB) { // kıvılcımlar
+      ctx.strokeStyle = "#f0a500"; ctx.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        const a = Math.random() * TAU, r0 = h / 2, r1 = h / 2 + 6 + Math.random() * 10;
+        ctx.beginPath(); ctx.moveTo(r0 * Math.cos(a), r0 * Math.sin(a)); ctx.lineTo(r1 * Math.cos(a), r1 * Math.sin(a)); ctx.stroke();
+      }
+    }
   } else if (c.type === "bulb") {
     const I = res ? (res.bulbI.get(c.id) || 0) : 0;
     const br = min(1.3, I / I_REF);
-    if (br > 0.05) { // hale
-      const g = ctx.createRadialGradient(0, 0, 3, 0, 0, 34);
-      g.addColorStop(0, `rgba(255,214,90,${0.55 * br})`); g.addColorStop(1, "rgba(255,214,90,0)");
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 34, 0, TAU); ctx.fill();
+    if (br > 0.05) {
+      const fl = 1 + 0.04 * Math.sin(flow * 30); // hafif titreşen ışık
+      const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 40 * fl);
+      g.addColorStop(0, `rgba(255,210,80,${0.6 * br})`); g.addColorStop(1, "rgba(255,210,80,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 40 * fl, 0, TAU); ctx.fill();
+      // ışınlar
+      ctx.strokeStyle = `rgba(240,165,0,${0.5 * br})`; ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; ctx.beginPath(); ctx.moveTo(24 * Math.cos(a), 24 * Math.sin(a)); ctx.lineTo(30 * Math.cos(a), 30 * Math.sin(a)); ctx.stroke(); }
     }
-    ctx.beginPath(); ctx.arc(0, 0, 18, 0, TAU);
-    ctx.fillStyle = br > 0.05 ? `rgb(${255},${round(214 + 30 * br)},${round(90 + 60 * br)})` : "#e8e4d6";
+    // duy (vida)
+    ctx.fillStyle = "#9aa0ad"; ctx.strokeStyle = "#22334f"; ctx.lineWidth = 1.5;
+    rr(-7, 13, 14, 12, 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "#6b7280"; ctx.lineWidth = 1;
+    for (let y = 16; y <= 22; y += 3) { ctx.beginPath(); ctx.moveTo(-7, y); ctx.lineTo(7, y); ctx.stroke(); }
+    // cam (armut)
+    ctx.beginPath(); ctx.arc(0, -2, 17, 0, TAU);
+    ctx.fillStyle = br > 0.05 ? `rgb(255,${round(210 + 35 * br)},${round(110 + 90 * br)})` : "#e8e4d6";
     ctx.fill(); ctx.strokeStyle = "#22334f"; ctx.lineWidth = 2; ctx.stroke();
     // filaman
-    ctx.strokeStyle = br > 0.05 ? "#b5432c" : "#8b8e96"; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(-8, 6); ctx.lineTo(-3, -5); ctx.lineTo(0, 5); ctx.lineTo(3, -5); ctx.lineTo(8, 6); ctx.stroke();
+    ctx.strokeStyle = br > 0.05 ? "#c0392b" : "#8b8e96"; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(-8, 4); ctx.lineTo(-3, -8); ctx.lineTo(0, 2); ctx.lineTo(3, -8); ctx.lineTo(8, 4); ctx.stroke();
+    // cam parlaması
+    ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.beginPath(); ctx.arc(-6, -8, 3, 0, TAU); ctx.fill();
+    // parlaklık etiketi
+    ctx.fillStyle = br > 0.05 ? "#b5432c" : "#8b8e96"; ctx.font = '600 10px "IBM Plex Mono"';
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("%" + round(min(100, br * 100)), 0, 34);
+  } else if (c.type === "ammeter") {
+    const I = res ? (res.ammI.get(c.id) || 0) : 0;
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, TAU);
+    ctx.fillStyle = "#faf8f1"; ctx.fill(); ctx.strokeStyle = "#22334f"; ctx.lineWidth = 2; ctx.stroke();
+    // kadran yayı
+    ctx.strokeStyle = "#c9c3b4"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 4, 15, PI * 1.15, PI * 1.85); ctx.stroke();
+    // ibre (akıma göre döner)
+    const frac = min(1, I / (2.2 * I_REF));
+    const ang = PI * 1.15 + frac * (PI * 0.7);
+    ctx.strokeStyle = "#b5432c"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 4); ctx.lineTo(14 * Math.cos(ang), 4 + 14 * Math.sin(ang)); ctx.stroke();
+    ctx.fillStyle = "#22334f"; ctx.beginPath(); ctx.arc(0, 4, 2.5, 0, TAU); ctx.fill();
+    // A harfi + değer
+    ctx.fillStyle = "#22334f"; ctx.font = '700 12px Inter'; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("A", 0, -11);
+    ctx.fillStyle = "#b5432c"; ctx.font = '600 10px "IBM Plex Mono"';
+    ctx.fillText(I.toFixed(2) + " A", 0, 33);
   } else { // switch
     ctx.fillStyle = "#faf8f1"; ctx.strokeStyle = "#22334f"; ctx.lineWidth = 2;
     rr(-w / 2, -h / 2, w, h, 6); ctx.fill(); ctx.stroke();
-    // kontaklar
     ctx.fillStyle = "#22334f";
     ctx.beginPath(); ctx.arc(-16, 0, 3.5, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.arc(16, 0, 3.5, 0, TAU); ctx.fill();
-    // kol
     ctx.strokeStyle = c.on ? "#3f7d6d" : "#b5432c"; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(c.on ? 16 : 10, c.on ? 0 : -14); ctx.stroke();
     ctx.fillStyle = c.on ? "#3f7d6d" : "#b5432c"; ctx.font = '600 9px "IBM Plex Mono"';
@@ -256,6 +314,8 @@ function checkChallenges(res) {
   if (bright.length >= 2) markCh("parallel");
   const dim = lit.filter((c) => { const b = (res.bulbI.get(c.id) || 0) / I_REF; return b > 0.15 && b < 0.6; });
   if (dim.length >= 2) markCh("series");
+  let ammMax = 0; res.ammI.forEach((v) => ammMax = max(ammMax, v));
+  if (ammMax > 0.1) markCh("measure");
 
   const st = document.getElementById("status");
   if (res.short) { st.textContent = "⚠ Kısa devre! Pil çabuk biter — araya ampul koy."; st.className = "status short"; }
@@ -320,7 +380,9 @@ function up(ev) {
     state.wiring = null; return;
   }
   if (state.drag) {
-    if (!state.drag.moved && state.drag.c.type === "switch") state.drag.c.on = !state.drag.c.on;
+    const c = state.drag.c;
+    if (!state.drag.moved && c.type === "switch") c.on = !c.on;
+    else if (state.drag.moved) { c.x = Math.round(c.x / 22) * 22; c.y = Math.round(c.y / 22) * 22; } // ızgaraya yasla
     state.drag = null;
   }
 }
