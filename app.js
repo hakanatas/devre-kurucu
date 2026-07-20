@@ -63,9 +63,9 @@ function isConnected(cid, term) {
 function wireAt(x, y) {
   for (let k = wires.length - 1; k >= 0; k--) {
     const wobj = wires[k];
-    const a = termPos(byId(wobj.a[0]), wobj.a[1]);
-    const b = termPos(byId(wobj.b[0]), wobj.b[1]);
-    if (distToSeg(x, y, a, b) < 8) return k;
+    const pts = wirePath(termPos(byId(wobj.a[0]), wobj.a[1]), wobj.a[1] ? 1 : -1,
+                         termPos(byId(wobj.b[0]), wobj.b[1]), wobj.b[1] ? 1 : -1);
+    for (let i = 1; i < pts.length; i++) if (distToSeg(x, y, pts[i - 1], pts[i]) < 8) return k;
   }
   return -1;
 }
@@ -174,7 +174,8 @@ function draw(res) {
   // teller (dik açılı / Manhattan)
   for (let k = 0; k < wires.length; k++) {
     const wobj = wires[k];
-    const pts = wirePath(termPos(byId(wobj.a[0]), wobj.a[1]), termPos(byId(wobj.b[0]), wobj.b[1]));
+    const A = byId(wobj.a[0]), B = byId(wobj.b[0]);
+    const pts = wirePath(termPos(A, wobj.a[1]), wobj.a[1] ? 1 : -1, termPos(B, wobj.b[1]), wobj.b[1] ? 1 : -1);
     ctx.strokeStyle = state.delWire === k ? "#b5432c" : "#3a4657";
     ctx.lineWidth = state.delWire === k ? 5 : 4;
     ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.stroke();
@@ -205,9 +206,13 @@ function draw(res) {
     ctx.lineWidth = isTarget ? 3 : 2; ctx.stroke();
   }
 }
-function wirePath(a, b) {
-  const mx = (a[0] + b[0]) / 2;
-  return [a, [mx, a[1]], [mx, b[1]], b];
+function wirePath(a, ad, b, bd) {
+  // her terminalden uç yönünde (ad/bd) kısa kuyruk çıkar, sonra dik açılı birleştir
+  const s = 16;
+  const p1 = [a[0] + ad * s, a[1]];
+  const p2 = [b[0] + bd * s, b[1]];
+  const mx = (p1[0] + p2[0]) / 2;
+  return [a, p1, [mx, p1[1]], [mx, p2[1]], p2, b];
 }
 function drawFlowDots(pts, res) {
   if (!res) return;
