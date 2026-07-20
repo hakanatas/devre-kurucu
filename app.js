@@ -47,12 +47,18 @@ function compAt(x, y) {
   }
   return null;
 }
-function termAt(x, y) {
+function termAt(x, y, rad = 22) {
+  let best = null, bd = rad;
   for (const c of comps) for (let i = 0; i < 2; i++) {
     const [tx, ty] = termPos(c, i);
-    if (hypot(x - tx, y - ty) < 15) return { comp: c, term: i, pos: [tx, ty] };
+    const d = hypot(x - tx, y - ty);
+    if (d < bd) { bd = d; best = { comp: c, term: i, pos: [tx, ty] }; }
   }
-  return null;
+  return best;
+}
+// bir terminalin bağlı olup olmadığı (dolu göstermek için)
+function isConnected(cid, term) {
+  return wires.some((w) => (w.a[0] === cid && w.a[1] === term) || (w.b[0] === cid && w.b[1] === term));
 }
 function wireAt(x, y) {
   for (let k = wires.length - 1; k >= 0; k--) {
@@ -174,21 +180,29 @@ function draw(res) {
     ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.stroke();
     drawFlowDots(pts, res);
   }
-  // kablo çekiliyor
+  // kablo çekiliyor (uç hedefe yapışır)
   if (state.wiring) {
+    const tgt = state.wiring.target;
+    const end = tgt ? tgt.pos : state.wiring.cur;
     ctx.strokeStyle = "#b5432c"; ctx.lineWidth = 3; ctx.setLineDash([6, 5]);
     ctx.beginPath(); ctx.moveTo(state.wiring.pos[0], state.wiring.pos[1]);
-    ctx.lineTo(state.wiring.cur[0], state.wiring.cur[1]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineTo(end[0], end[1]); ctx.stroke(); ctx.setLineDash([]);
   }
   // bileşenler
   for (const c of comps) drawComp(c, res);
-  // terminaller
+  // terminaller (bağlı = dolu; kablo hedefi = yeşil vurgu)
+  const wt = state.wiring && state.wiring.target;
   for (const c of comps) for (let i = 0; i < 2; i++) {
     const [tx, ty] = termPos(c, i);
-    const hot = state.hover && state.hover.comp === c && state.hover.term === i;
-    ctx.beginPath(); ctx.arc(tx, ty, hot ? 7 : 5, 0, TAU);
-    ctx.fillStyle = "#faf8f1"; ctx.fill();
-    ctx.strokeStyle = hot ? "#b5432c" : "#51607a"; ctx.lineWidth = 2; ctx.stroke();
+    const isTarget = wt && wt.comp === c && wt.term === i;
+    const isSource = state.wiring && state.wiring.comp === c && state.wiring.term === i;
+    const hot = isTarget || isSource || (!state.wiring && state.hover && state.hover.comp === c && state.hover.term === i);
+    const conn = isConnected(c.id, i);
+    ctx.beginPath(); ctx.arc(tx, ty, isTarget ? 10 : hot ? 8 : 5.5, 0, TAU);
+    ctx.fillStyle = isTarget ? "#3f7d6d" : conn ? "#3a4657" : "#faf8f1";
+    ctx.fill();
+    ctx.strokeStyle = isTarget ? "#3f7d6d" : hot ? "#b5432c" : "#51607a";
+    ctx.lineWidth = isTarget ? 3 : 2; ctx.stroke();
   }
 }
 function wirePath(a, b) {
@@ -360,21 +374,30 @@ function down(ev) {
 }
 function move(ev) {
   const [x, y] = pos(ev);
-  state.hover = termAt(x, y);
-  if (state.wiring) { state.wiring.cur = [x, y]; state.wiring.moved = true; }
-  else if (state.drag) {
+  if (state.wiring) {
+    state.wiring.cur = [x, y]; state.wiring.moved = true;
+    const t = termAt(x, y, 26);   // hedef: kaynaktan farklı en yakın terminal
+    state.wiring.target = (t && !(t.comp === state.wiring.comp && t.term === state.wiring.term)) ? t : null;
+    state.hover = null;
+  } else if (state.drag) {
     state.drag.c.x = max(50, min(W - 50, x - state.drag.dx));
     state.drag.c.y = max(40, min(H - 40, y - state.drag.dy));
     if (hypot(x - state.drag.down[0], y - state.drag.down[1]) > 4) state.drag.moved = true;
+  } else {
+    state.hover = termAt(x, y);
   }
   if (state.mode === "del") state.delWire = wireAt(x, y);
 }
+function wireExists(a0, a1, b0, b1) {
+  return wires.some((w) => (w.a[0] === a0 && w.a[1] === a1 && w.b[0] === b0 && w.b[1] === b1) ||
+                           (w.a[0] === b0 && w.a[1] === b1 && w.b[0] === a0 && w.b[1] === a1));
+}
 function up(ev) {
-  const [x, y] = pos(ev);
   if (state.wiring) {
-    const term = termAt(x, y);
-    if (term && !(term.comp === state.wiring.comp && term.term === state.wiring.term)) {
-      wires.push({ a: [state.wiring.comp.id, state.wiring.term], b: [term.comp.id, term.term] });
+    const t = state.wiring.target;   // son move'da belirlenen hedef (dokunmatik uyumlu)
+    const s = state.wiring;
+    if (t && !wireExists(s.comp.id, s.term, t.comp.id, t.term)) {
+      wires.push({ a: [s.comp.id, s.term], b: [t.comp.id, t.term] });
       document.getElementById("hint").style.display = "none";
     }
     state.wiring = null; return;
