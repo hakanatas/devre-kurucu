@@ -207,12 +207,16 @@ function draw(res) {
   }
 }
 function wirePath(a, ad, b, bd) {
-  // her terminalden uç yönünde (ad/bd) kısa kuyruk çıkar, sonra dik açılı birleştir
-  const s = 16;
-  const p1 = [a[0] + ad * s, a[1]];
-  const p2 = [b[0] + bd * s, b[1]];
-  const mx = (p1[0] + p2[0]) / 2;
-  return [a, p1, [mx, p1[1]], [mx, p2[1]], p2, b];
+  // her terminalden uç yönünde (ad/bd) kısa kuyruk çıkar; sonra U dönüşü olmadan
+  // (kuyruk yönünü koruyarak) tek köşeyle hedefin kuyruk ucuna, oradan terminale.
+  const s = 18;
+  const ax = a[0] + ad * s, ay = a[1];
+  const bx = b[0] + bd * s, by = b[1];
+  const pts = [a, [ax, ay]];
+  if (Math.sign(bx - ax) === ad || ay === by) pts.push([bx, ay]); // yatay: kuyruk yönünde devam
+  else pts.push([ax, by]);                                        // dikey: kuyruktan 90° dön
+  pts.push([bx, by], b);
+  return pts;
 }
 function drawFlowDots(pts, res) {
   if (!res) return;
