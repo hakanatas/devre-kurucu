@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Devre Kurucu</title>
+<meta name="description" content="Sürükle-bırakla elektrik devresi kur: pil, ampul, anahtar ve kablolar. Ampuller gerçek fizikle yanar — seri sönük, paralel parlak. Ortaokul elektrik ünitesi.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27%23f2efe6%27%2F%3E%3Cpath%20d%3D%27M16%204.5L26.4%2010.5L26.4%2021.5L16%2027.5L5.6%2021.5L5.6%2010.5Z%27%20fill%3D%27none%27%20stroke%3D%27%2322334f%27%20stroke-width%3D%272.4%27%2F%3E%3Ccircle%20cx%3D%2716%27%20cy%3D%2716%27%20r%3D%273.6%27%20fill%3D%27%23b5432c%27%2F%3E%3C%2Fsvg%3E">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Devre Kurucu">
+<meta property="og:description" content="Sürükle-bırakla elektrik devresi kur: pil, ampul, anahtar, kablolar — ampuller gerçek fizikle yanar.">
+<meta property="og:image" content="https://hakanatas.github.io/devre-kurucu/og-image.png">
+<meta property="og:url" content="https://hakanatas.github.io/devre-kurucu/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://hakanatas.github.io/devre-kurucu/og-image.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <a class="kicker page-link" href="https://hakanatas.github.io/bilim-levhalari/">⌂ Etkileşimli Bilim Levhaları</a>
+    <h1>Devre <span>Kurucu</span>
+      <button class="info-btn" id="infoBtn" title="Bu levha nedir?">i</button></h1>
+  </div>
+  <nav class="plate-nav">
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/interactive-periodic-table/">
+      <span class="fig">Levha I</span><span class="lbl">Periyodik Tablo</span></a>
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/interactive-periodic-table/nuclides.html">
+      <span class="fig">Levha II</span><span class="lbl">Nüklit Haritası</span></a>
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/fourier-cizim-makinesi/">
+      <span class="fig">Levha III</span><span class="lbl">Fourier Makinesi</span></a>
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/yorunge-kurucu/">
+      <span class="fig">Levha IV</span><span class="lbl">Yörünge Kurucu</span></a>
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/galton-tahtasi/">
+      <span class="fig">Levha V</span><span class="lbl">Galton Tahtası</span></a>
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/dalga-laboratuvari/">
+      <span class="fig">Levha VI</span><span class="lbl">Dalga Laboratuvarı</span></a>
+    <a class="plate-tab page-link" href="https://hakanatas.github.io/harmonograf/">
+      <span class="fig">Levha VII</span><span class="lbl">Harmonograf</span></a>
+    <a class="plate-tab active page-link" href="index.html">
+      <span class="fig">Levha VIII</span><span class="lbl">Devre Kurucu</span></a>
+  </nav>
+</header>
+
+<div class="board-wrap">
+  <div class="control-bar">
+    <div class="presets">
+      <button data-add="battery">🔋 Pil ekle</button>
+      <button data-add="bulb">💡 Ampul ekle</button>
+      <button data-add="switch">🔀 Anahtar ekle</button>
+    </div>
+    <div class="tools">
+      <button id="delBtn" class="tool-btn">✂ Sil modu</button>
+      <button id="clearBtn" class="tool-btn">🗑 Temizle</button>
+    </div>
+    <span class="status" id="status"></span>
+  </div>
+
+  <div class="challenges" id="challenges">
+    <span class="ch-title">Görevler</span>
+    <span class="ch" data-ch="light">○ Bir ampul yak</span>
+    <span class="ch" data-ch="switch">○ Anahtarla ampulü aç-kapa</span>
+    <span class="ch" data-ch="two">○ İki ampulü aynı anda yak</span>
+    <span class="ch" data-ch="parallel">○ Paralel bağla (ikisi de parlak)</span>
+    <span class="ch" data-ch="series">○ Seri bağla (ikisi de sönük)</span>
+  </div>
+
+  <div class="board" id="board">
+    <canvas id="canvas"></canvas>
+    <div class="hint" id="hint">Yukarıdan bir eleman ekle · terminale (uç noktaya) tıklayıp kablo çek · anahtara tıkla aç-kapa</div>
+  </div>
+  <div class="plate-caption">Levha VIII — Elektrik Devresi · ortaokul</div>
+  <p class="explain">
+    Elektrik, bir <b>kapalı yolda</b> akar. Pilin iki ucundan çıkıp ampulden geçerek geri dönen tam bir
+    halka kurarsan ampul yanar; halka açıksa (ya da anahtar kapalıysa) hiçbir şey olmaz. İki ampulü
+    <b>peş peşe (seri)</b> bağlarsan akım ikisini de zar zor besler, sönük yanarlar; <b>yan yana (paralel)</b>
+    bağlarsan her biri tam akım alır, ikisi de parlak yanar. Pil eklersen daha parlak; ampulsüz doğrudan
+    bağlarsan <b>kısa devre</b> olur — pil çabuk biter.
+  </p>
+</div>
+
+<div class="modal-backdrop" id="infoModal" hidden>
+  <div class="modal">
+    <button class="modal-close" id="infoClose" aria-label="Kapat">×</button>
+    <div class="modal-body">
+      <div class="modal-kicker">Levha VIII · Rehber</div>
+      <h2>Devre <span>Kurucu</span></h2>
+      <p>Kendi elektrik devreni kur: pil, ampul, anahtar ve kablolarla oyna. Ampuller <b>gerçek fizikle</b>
+        yanar — arkada tam bir devre çözücü çalışır, tıpkı okuldaki gibi seri/paralel farkını görürsün.</p>
+      <h3>Nasıl kullanılır</h3>
+      <ul>
+        <li><b>Eleman ekle</b>: üstteki "🔋 Pil / 💡 Ampul / 🔀 Anahtar" düğmeleriyle tuvale eleman koy, gövdesinden tutup sürükle.</li>
+        <li><b>Kablo çek</b>: bir elemanın ucundaki küçük noktaya (terminale) tıkla, sonra başka bir terminale tıkla — arada kablo oluşur.</li>
+        <li><b>Anahtar</b>: üstüne tıklayınca açılıp kapanır; kapalıyken akımı keser.</li>
+        <li><b>Sil</b>: "✂ Sil modu"nu açıp elemana/kabloya tıkla. "🗑 Temizle" hepsini siler.</li>
+      </ul>
+      <h3>Bilimsel arka plan</h3>
+      <p>Elektrik akımı ancak <b>kapalı bir devrede</b> akar. Pil bir gerilim (itme) sağlar, ampul bir
+        direnç gösterir; akım = gerilim ÷ direnç (<b>Ohm yasası</b>). Seri bağlamada dirençler toplanır,
+        akım azalır (ampuller sönük); paralel bağlamada her kola ayrı akım gider (ampuller parlak).
+        Ampulsüz doğrudan bağlantı direnci sıfıra indirir — akım fırlar, bu <b>kısa devredir</b>.</p>
+      <div class="modal-tip">💡 İpucu: Önce tek pil + tek ampulü kablolarla kapalı halka yap. Sonra ikinci ampulü bir kez seri, bir kez paralel bağlayıp parlaklık farkını izle.</div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
